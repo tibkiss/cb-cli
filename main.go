@@ -71,6 +71,7 @@ func main() {
 		log.SetLevel(log.ErrorLevel)
 		formatter := &hdc.CBFormatter{}
 		log.SetFormatter(formatter)
+		log.AddHook(hdc.ContextHook{})
 		if c.Bool(hdc.FlDebug.Name) {
 			log.SetLevel(log.DebugLevel)
 		}

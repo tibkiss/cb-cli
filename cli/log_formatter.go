@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	log "github.com/Sirupsen/logrus"
+	"path"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -47,6 +49,33 @@ func (f *CBFormatter) Format(entry *log.Entry) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
+type ContextHook struct{}
+
+func (hook ContextHook) Levels() []log.Level {
+	return []log.Level{
+		log.WarnLevel,
+		log.InfoLevel,
+		log.DebugLevel,
+	}
+}
+
+func (hook ContextHook) Fire(entry *log.Entry) error {
+	pc := make([]uintptr, 3, 3)
+	cnt := runtime.Callers(9, pc)
+
+	for i := 0; i < cnt; i++ {
+		fu := runtime.FuncForPC(pc[i] - 1)
+		name := fu.Name()
+		if !strings.Contains(name, "github.com/Sirupsen/logrus") {
+			_, line := fu.FileLine(pc[i] - 1)
+			entry.Data["func"] = path.Base(name)
+			entry.Data["line"] = line
+			break
+		}
+	}
+	return nil
+}
+
 func printColored(b *bytes.Buffer, entry *log.Entry, keys []string) {
 	var levelColor int
 	switch entry.Level {
@@ -60,7 +89,7 @@ func printColored(b *bytes.Buffer, entry *log.Entry, keys []string) {
 		levelColor = blue
 	}
 
-	levelText := strings.ToUpper(levelToString(entry)) + ":"
+	levelText := strings.ToUpper(levelToString(entry))
 
 	if runtime.GOOS == "windows" {
 		fmt.Fprintf(b, "%-6s %-44s ", levelText, entry.Message)
@@ -69,12 +98,35 @@ func printColored(b *bytes.Buffer, entry *log.Entry, keys []string) {
 			fmt.Fprintf(b, "%s=%v", k, v)
 		}
 	} else {
-		fmt.Fprintf(b, "\x1b[%dm%-6s\x1b[0m %-44s ", levelColor, levelText, entry.Message)
-		for _, k := range keys {
-			v := entry.Data[k]
-			fmt.Fprintf(b, " \x1b[%dm%s\x1b[0m=%v", levelColor, k, v)
+		fun, line := getLocationInfo(entry)
+		location := ""
+		if len(fun) > 0 {
+			location = fmt.Sprintf("[%s:%s]", fun, line)
+		}
+		fmt.Fprintf(b, "\x1b[%dm%s%s: \x1b[0m%-44s ", levelColor, levelText, location, entry.Message)
+		//for _, k := range keys {
+		//	v := entry.Data[k]
+		//	fmt.Fprintf(b, " \x1b[%dm%s\x1b[0m=%v", levelColor, k, v)
+		//}
+	}
+}
+
+func getLocationInfo(entry *log.Entry) (fun, line string) {
+	if _, ok := entry.Data["func"]; ok {
+		f := entry.Data["func"].(string)
+		funcParts := strings.Split(f, ".")
+		for i := len(funcParts) - 1; i >= 0; i-- {
+			segment := funcParts[i]
+			if !strings.HasPrefix(segment, "func") {
+				fun = segment
+				break
+			}
 		}
 	}
+	if _, ok := entry.Data["line"]; ok {
+		line = strconv.Itoa(entry.Data["line"].(int))
+	}
+	return fun, line
 }
 
 func levelToString(entry *log.Entry) string {
