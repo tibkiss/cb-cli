@@ -24,14 +24,18 @@
 # WAIT_FOR_SYNC
 
 function wait-cluster-status() {
+    param1=$3
+    export param1
     is_status_available=false
     create_failed=false
+    cnt=0
 
-    while [ $SECONDS -lt "${1}" ] && [ "${is_status_available}" == false ] && [ "${create_failed}" == false ]
+    while [ $cnt -lt 70 ] && [ "${is_status_available}" == false ] && [ "${create_failed}" == false ]
     do
     	sleep 30
-	    is_status_available=$(cb cluster describe --name "${2}" | jq -r '."status" == "${3}"')
-	    create_failed=$(cb cluster describe --name "${2}" | jq -r '."status" == "CREATE_FAILED"')
+	    is_status_available=$(cb cluster describe --name "${2}" | jq -r '."cluster" | ."status"==env.param1')
+	    create_failed=$(cb cluster describe --name "${2}" | jq -r '."cluster" | ."status" == "CREATE_FAILED"')
+	    cnt=$(($cnt+1))
     done
 
     if [[ "${is_status_available}" != true ]]; then
@@ -42,9 +46,12 @@ function wait-cluster-status() {
 }
 
 function is-cluster-status() {
+    param1=$2
+    export param1
+
     status_is=false
 
-	status_is=$(cb cluster describe --name "${1}" | jq -r '."status" == "${2}"')
+	status_is=$(cb cluster describe --name $1 | jq -r '."status" == env.param1')
 
     if [[ "${status_is}" != true ]]; then
         echo $(cb cluster describe --name "${1}" | jq -r '."statusReason"')
